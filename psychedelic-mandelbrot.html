@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Psychedelic Fractal Art</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden; /* Hide scrollbars */
+            background-color: #000; /* Black background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Inter', sans-serif; /* Modern font */
+        }
+        canvas {
+            display: block;
+            border-radius: 8px; /* Slightly rounded corners for the canvas */
+            box-shadow: 0 0 20px rgba(128, 0, 128, 0.7); /* Purple glow */
+        }
+        .controls {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(30, 30, 30, 0.8);
+            padding: 15px 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            color: white;
+        }
+        .controls label {
+            font-size: 0.9em;
+        }
+        .controls input[type="range"], .controls input[type="number"], .controls button {
+            margin-left: 8px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid #555;
+            background-color: #444;
+            color: white;
+            font-size: 0.9em;
+        }
+        .controls input[type="range"] {
+            cursor: pointer;
+        }
+        .controls button {
+            background-color: #6a0dad; /* Purple button */
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        .controls button:hover {
+            background-color: #8a2be2; /* Lighter purple on hover */
+        }
+        .info-text {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.8em;
+            background-color: rgba(0,0,0,0.5);
+            padding: 5px;
+            border-radius: 4px;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="controls">
+        <label for="maxIterSlider">Max Iterations:</label>
+        <input type="range" id="maxIterSlider" min="50" max="500" value="150" step="10">
+        <span id="maxIterValue">150</span>
+
+        <label for="zoomInput">Zoom:</label>
+        <input type="number" id="zoomInput" value="1" step="0.1" min="0.1">
+
+        <label for="panXInput">Pan X:</label>
+        <input type="number" id="panXInput" value="-0.5" step="0.1">
+
+        <label for="panYInput">Pan Y:</label>
+        <input type="number" id="panYInput" value="0" step="0.1">
+        
+        <button id="resetButton">Reset View</button>
+    </div>
+    <canvas id="fractalCanvas"></canvas>
+    <div class="info-text">Click and drag to pan. Use mouse wheel to zoom.</div>
+
+    <script>
+        // Get the canvas element and its 2D rendering context
+        const canvas = document.getElementById('fractalCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // --- Control Elements ---
+        const maxIterSlider = document.getElementById('maxIterSlider');
+        const maxIterValueSpan = document.getElementById('maxIterValue');
+        const zoomInput = document.getElementById('zoomInput');
+        const panXInput = document.getElementById('panXInput');
+        const panYInput = document.getElementById('panYInput');
+        const resetButton = document.getElementById('resetButton');
+
+        // --- Fractal Parameters ---
+        let maxIterations = parseInt(maxIterSlider.value); // Maximum number of iterations for Mandelbrot calculation
+        let zoom = parseFloat(zoomInput.value); // Initial zoom level
+        let panX = parseFloat(panXInput.value); // Initial X offset
+        let panY = parseFloat(panYInput.value); // Initial Y offset
+        
+        const defaultZoom = 1;
+        const defaultPanX = -0.5;
+        const defaultPanY = 0;
+        const defaultMaxIterations = 150;
+
+        let colorOffset = 0; // Used to animate colors over time
+        let animationFrameId;
+
+        // --- Mouse Interaction Variables ---
+        let isDragging = false;
+        let lastMouseX, lastMouseY;
+
+        // Function to set canvas dimensions
+        function setupCanvas() {
+            // Make canvas slightly smaller than window to show border and shadow
+            const size = Math.min(window.innerWidth, window.innerHeight) * 0.9;
+            canvas.width = size;
+            canvas.height = size;
+            drawFractal(); // Redraw fractal when canvas is resized
+        }
+
+        // Function to map a value from one range to another
+        function mapRange(value, inMin, inMax, outMin, outMax) {
+            return (value - inMin) * (outMax - outMin) / (inMax - inMin) + outMin;
+        }
+
+        // Function to get a psychedelic color based on iteration count and time
+        function getColor(iterations) {
+            if (iterations === maxIterations) {
+                return '#000000'; // Black for points inside the set
+            }
+            // Psychedelic coloring: cycle through hues
+            // The 'colorOffset' is incremented in the animation loop to make colors shift
+            const hue = (iterations * 10 + colorOffset) % 360;
+            const saturation = 90 + Math.sin(colorOffset / 50) * 10; // Pulsating saturation
+            const lightness = 50 + Math.cos(iterations / (maxIterations/10) + colorOffset / 20) * 15; // Varying lightness
+            return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+        }
+
+        // Function to draw the Mandelbrot fractal
+        function drawFractal() {
+            // Iterate over each pixel on the canvas
+            for (let x = 0; x < canvas.width; x++) {
+                for (let y = 0; y < canvas.height; y++) {
+                    // Map pixel coordinates to complex plane coordinates
+                    // Adjust mapping based on zoom and pan
+                    let realPart = mapRange(x, 0, canvas.width, -2 / zoom + panX, 1 / zoom + panX);
+                    let imagPart = mapRange(y, 0, canvas.height, -1.5 / zoom + panY, 1.5 / zoom + panY);
+
+                    const cReal = realPart;
+                    const cImag = imagPart;
+                    let zReal = 0;
+                    let zImag = 0;
+
+                    let iterations = 0;
+                    // Mandelbrot iteration
+                    while (zReal * zReal + zImag * zImag <= 4 && iterations < maxIterations) {
+                        const tempZReal = zReal * zReal - zImag * zImag + cReal;
+                        zImag = 2 * zReal * zImag + cImag;
+                        zReal = tempZReal;
+                        iterations++;
+                    }
+
+                    // Set pixel color based on iteration count
+                    ctx.fillStyle = getColor(iterations);
+                    ctx.fillRect(x, y, 1, 1); // Draw a 1x1 pixel
+                }
+            }
+        }
+
+        // Animation loop
+        function animate() {
+            colorOffset += 1; // Increment color offset for psychedelic effect
+            drawFractal();
+            animationFrameId = requestAnimationFrame(animate);
+        }
+        
+        // --- Event Listeners ---
+        function updateControlsDisplay() {
+            maxIterValueSpan.textContent = maxIterations;
+            zoomInput.value = zoom.toFixed(Math.max(1, Math.ceil(-Math.log10(zoom)) + 1)); // Dynamic precision
+            panXInput.value = panX.toFixed(3);
+            panYInput.value = panY.toFixed(3);
+        }
+
+        maxIterSlider.addEventListener('input', (e) => {
+            maxIterations = parseInt(e.target.value);
+            updateControlsDisplay();
+            // No need to call drawFractal here, animate loop will pick it up
+        });
+
+        zoomInput.addEventListener('change', (e) => {
+            const newZoom = parseFloat(e.target.value);
+            if (!isNaN(newZoom) && newZoom > 0) {
+                zoom = newZoom;
+                updateControlsDisplay();
+            } else {
+                zoomInput.value = zoom.toFixed(2); // Reset to current valid zoom
+            }
+        });
+        
+        panXInput.addEventListener('change', (e) => {
+            const newPanX = parseFloat(e.target.value);
+            if (!isNaN(newPanX)) {
+                panX = newPanX;
+                updateControlsDisplay();
+            } else {
+                panXInput.value = panX.toFixed(2);
+            }
+        });
+
+        panYInput.addEventListener('change', (e) => {
+            const newPanY = parseFloat(e.target.value);
+            if (!isNaN(newPanY)) {
+                panY = newPanY;
+                updateControlsDisplay();
+            } else {
+                panYInput.value = panY.toFixed(2);
+            }
+        });
+
+        resetButton.addEventListener('click', () => {
+            zoom = defaultZoom;
+            panX = defaultPanX;
+            panY = defaultPanY;
+            maxIterations = defaultMaxIterations;
+            maxIterSlider.value = defaultMaxIterations;
+            updateControlsDisplay();
+        });
+        
+        // Mouse wheel for zooming
+        canvas.addEventListener('wheel', (event) => {
+            event.preventDefault(); // Prevent page scrolling
+            
+            const rect = canvas.getBoundingClientRect();
+            const mouseXCanvas = event.clientX - rect.left;
+            const mouseYCanvas = event.clientY - rect.top;
+
+            // Convert mouse position to complex plane coordinates before zoom
+            const realBeforeZoom = mapRange(mouseXCanvas, 0, canvas.width, -2 / zoom + panX, 1 / zoom + panX);
+            const imagBeforeZoom = mapRange(mouseYCanvas, 0, canvas.height, -1.5 / zoom + panY, 1.5 / zoom + panY);
+
+            const zoomFactor = event.deltaY < 0 ? 1.2 : 1 / 1.2; // Zoom in or out
+            zoom *= zoomFactor;
+
+            // Calculate new pan values to keep mouse position fixed on the fractal
+            const realAfterZoom = mapRange(mouseXCanvas, 0, canvas.width, -2 / zoom + panX, 1 / zoom + panX);
+            const imagAfterZoom = mapRange(mouseYCanvas, 0, canvas.height, -1.5 / zoom + panY, 1.5 / zoom + panY);
+            
+            panX += realBeforeZoom - realAfterZoom;
+            panY += imagBeforeZoom - imagAfterZoom;
+
+            updateControlsDisplay();
+        });
+
+        // Mouse dragging for panning
+        canvas.addEventListener('mousedown', (event) => {
+            if (event.button === 0) { // Left mouse button
+                isDragging = true;
+                lastMouseX = event.clientX;
+                lastMouseY = event.clientY;
+                canvas.style.cursor = 'grabbing';
+            }
+        });
+
+        canvas.addEventListener('mousemove', (event) => {
+            if (isDragging) {
+                const deltaX = event.clientX - lastMouseX;
+                const deltaY = event.clientY - lastMouseY;
+
+                // Adjust pan based on mouse movement and current zoom level
+                // The pan amount should be scaled inversely with zoom
+                panX -= deltaX / (canvas.width * zoom * 0.5); // 0.5 is a sensitivity factor
+                panY -= deltaY / (canvas.height * zoom * 0.5);
+
+                lastMouseX = event.clientX;
+                lastMouseY = event.clientY;
+                updateControlsDisplay();
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                canvas.style.cursor = 'grab';
+            }
+        });
+        
+        canvas.addEventListener('mouseleave', () => { // Stop dragging if mouse leaves canvas
+            if (isDragging) {
+                isDragging = false;
+                canvas.style.cursor = 'default';
+            }
+        });
+
+
+        // Initial setup
+        window.addEventListener('resize', setupCanvas);
+
+        // --- Start ---
+        // Set initial canvas size and start animation when the window loads
+        window.onload = () => {
+            setupCanvas();
+            updateControlsDisplay(); // Initialize control display
+            canvas.style.cursor = 'grab';
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId); // Cancel previous frame if any
+            }
+            animate();
+        };
+    </script>
+</body>
+</html>
